@@ -1,4 +1,15 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+
+#
+# This code is NOT stable !!!
+#
+# version 0.2
+# continous work to get the code errorfree or at least compilable ...
+#
+
+
 print("Loading ptvsd")
 import ptvsd
 ptvsd.enable_attach(secret = "pi")
@@ -8,10 +19,24 @@ print("Loading serial,time,datetime, threading, sys, GPIO")
 import serial,time,datetime, threading, sys,  RPi.GPIO as GPIO
 print("Loading Adafruit_PWM_Servo_Driver")
 from Adafruit_PWM_Servo_Driver import PWM #class
+print("Loading Adafruit ADS")
+from Adafruit_ADS1x15 import ADS1x15
 print("Loading threading")
 from threading import Thread
 print("Loading ConfigParser")
 import ConfigParser
+print("Loading Queue")
+from Queue import Queue
+print("Loading OLED")
+from oled.device import ssd1306, sh1106
+from oled.render import canvas
+print("Loading PIL")
+#from PIL import Image
+from PIL import ImageFont
+#from PIL import ImageDraw
+print("Loading numpy")
+from numpy import interp
+
 
 debug = True
 
@@ -21,7 +46,7 @@ debug = True
 # ---INIT---
 if debug: print("Initializing variables")
 
-buzzer_pin = 18
+buzzer_pin = 23
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(buzzer_pin, GPIO.OUT)
@@ -58,9 +83,9 @@ fFirstMove		= 0		# need to handle first move specially...
 
 #[POSITIONS SINGLE LEG CONTROL]
 SLHold	        = 0.0		 	#Single leg control mode
-LegPosX	        = []	#Actual X Posion of the Leg
-LegPosY	        = []	#Actual Y Posion of the Leg
-LegPosZ	        = []	#Actual Z Posion of the Leg
+LegPosX	        = [0,0,0,0,0,0]	#Actual X Posion of the Leg
+LegPosY	        = [0,0,0,0,0,0]	#Actual Y Posion of the Leg
+LegPosZ	        = [0,0,0,0,0,0]	#Actual Z Posion of the Leg
 
 #[INPUTS]
 #butA 	var bit
@@ -91,11 +116,11 @@ cos4			= 0.0		#Output Cosinus of the given Angle, decimals = 4
 AngleRad4		= 0.0		#Output Angle in radials, decimals = 4
 NegativeValue	= 0.0			#If the the value is Negative
 
-#GetAtan2
+#GetATan2
 AtanX			= 0.0		#Input X
 AtanY			= 0.0		#Input Y
 Atan4			= 0.0		#ArcTan2 output
-XYhyp2			= 0.0		#Output presenting Hypotenuse of X and Y
+XYHyp2			= 0.0		#Output presenting Hypotenuse of X and Y
 
 #Body position
 BodyPosX 		= 0		#Global Input for the position of the body
@@ -163,10 +188,10 @@ BalanceMode	    = 0.0
 TotalTransX	    = 0.0
 TotalTransZ		= 0.0
 TotalTransY		= 0.0
-TotalYbal1		= 0.0
-TotalXBal1		= 0.0
-TotalZBal1		= 0.0
-TotalY			= 0.0   #Total Y distance between the center of the body and the feet
+TotalYBal1		= 0
+TotalXBal1		= 0
+TotalZBal1		= 0
+TotalY			= 0   #Total Y distance between the center of the body and the feet
 
 #[Single Leg Control]
 SelectedLeg		= 0
@@ -194,10 +219,10 @@ GaitLegNr		= []	#Init position of the leg
 for no in range(0,6):
     GaitLegNr.append(0)
 GaitLegNrIn	 	= 0 	#Input Number of the leg
-GaitPosX 		= []    #Array containing Relative X position corresponding to the Gait
-GaitPosY 		= []    #Array containing Relative Y position corresponding to the Gait
-GaitPosZ 		= []    #Array containing Relative Z position corresponding to the Gait
-GaitRotY 		= []    #Array containing Relative Y rotation corresponding to the Gait
+GaitPosX 		= [0,0,0,0,0,0]    #Array containing Relative X position corresponding to the Gait
+GaitPosY 		= [0,0,0,0,0,0]    #Array containing Relative Y position corresponding to the Gait
+GaitPosZ 		= [0,0,0,0,0,0]    #Array containing Relative Z position corresponding to the Gait
+GaitRotY 		= [0,0,0,0,0,0]    #Array containing Relative Y rotation corresponding to the Gait
 GaitPeak      	= 0     # Saving the largest (ABS) peak value from GaitPosX,Y,Z and GaitRotY
 Walking         = 0     # True if the robot are walking
 
@@ -254,39 +279,38 @@ noServo = 27    #no need to parse servo numbers higher than this
 
 serviDynMa = [
     #snr    fss     minpulse    maxpuls    speed   endpos     
-    [0,     0.4,    650,        2350,       0,      1500],     
-    [1,     0.4,    650,        2350,       0,      1500],    
-    [2,     0.4,    650,        2230,       0,      1500],    
-    [3,     0.4,    0,          0,          0,      1500],   
-    [4,     0.4,    840,        2330,       0,      1500],    
-    [5,     0.4,    840,        2330,       0,      1500],    
-    [6,     0.4,    840,        2330,       0,      1500],    
-    [7,     0.4,    0,          0,          0,      1500],    
-    [8,     0.4,    840,        2330,       0,      1500],    
-    [9,     0.4,    840,        2330,       0,      1500],    
-    [10,    0.4,    840,        2330,       0,      1500],    
-    [11,    0.4,    0,          0,          0,      1500],    
-    [12,    0.4,    0,          0,          0,      1500],    
-    [13,    0.4,    0,          0,          0,      1500],    
-    [14,    0.4,    0,          0,          0,      1500],    
-    [15,    0.4,    0,          0,          0,      1500],    
-    [16,    0.4,    840,        2330,       0,      1500],    
-    [17,    0.4,    840,        2330,       0,      1500],    
-    [18,    0.4,    840,        2330,       0,      1500],    
-    [19,    0.4,    0,          0,          0,      1500],    
-    [20,    0.4,    840,        2330,       0,      1500],    
-    [21,    0.4,    650,        2350,       0,      1500],    
-    [22,    0.4,    840,        2230,       0,      1500],    
-    [23,    0.4,    0,          0,          0,      1500],    
-    [24,    0.4,    840,        2330,       0,      1500],    
-    [25,    0.4,    840,        2330,       0,      1500],    
-    [26,    0.4,    840,        2330,       0,      1500],    
-    [27,    0.4,    0,          0,          0,      1500],    
-    [28,    0.4,    0,          0,          0,      1500],    
-    [29,    0.4,    0,          0,          0,      1500],    
-    [30,    0.4,    0,          0,          0,      1500],    
-    [31,    0.4,    0,          0,          0,      1500],    
-]
+    [0,     0.65,    900,        2100,       0,      1500],     
+    [1,     0.65,    900,        2100,       0,      1500],    
+    [2,     0.65,    900,        2100,       0,      1500],    
+    [3,     0.65,    0,          0,          0,      1500],   
+    [4,     0.65,    900,        2100,       0,      1500],    
+    [5,     0.65,    900,        2100,       0,      1500],    
+    [6,     0.65,    900,        2100,       0,      1500],    
+    [7,     0.65,    0,          0,          0,      1500],    
+    [8,     0.65,    900,        2100,       0,      1500],    
+    [9,     0.65,    900,        2100,       0,      1500],    
+    [10,    0.65,    900,        2100,       0,      1500],    
+    [11,    0.65,    0,          0,          0,      1500],    
+    [12,    0.65,    0,          0,          0,      1500],    
+    [13,    0.65,    0,          0,          0,      1500],    
+    [14,    0.65,    0,          0,          0,      1500],    
+    [15,    0.65,    0,          0,          0,      1500],    
+    [16,    0.65,    900,        2100,       0,      1500],    
+    [17,    0.65,    900,        2100,       0,      1500],    
+    [18,    0.65,    900,        2100,       0,      1500],    
+    [19,    0.65,    0,          0,          0,      1500],    
+    [20,    0.65,    900,        2100,       0,      1500],    
+    [21,    0.65,    900,        2100,       0,      1500],    
+    [22,    0.65,    900,        2100,       0,      1500],    
+    [23,    0.65,    0,          0,          0,      1500],    
+    [24,    0.65,    900,        2100,       0,      1500],    
+    [25,    0.65,    900,        2100,       0,      1500],    
+    [26,    0.65,    900,        2100,       0,      1500],    
+    [27,    0.65,    0,          0,          0,      1500],    
+    [28,    0.65,    0,          0,          0,      1500],    
+    [29,    0.65,    0,          0,          0,      1500],    
+    [30,    0.65,    0,          0,          0,      1500],    
+    [31,    0.65,    0,          0,          0,      1500], ]
 
 
 
@@ -454,17 +478,27 @@ cLFInitPosZ 	= -(cCoxaLength + cFemurLength) * 0.5
 
 StepsPerDegree 		= 133 #200 on 645, else 133
 
+print("Initializing Serial")
 port = serial.Serial("/dev/ttyAMA0",115200, timeout=1) # need timeout, else the threads hang and it whont terminate is sender is down
 port.flushInput()
 timeNow = time.time()
 ListOKByte = []
 
+print("Initializing Servidrivers")
 pwm = PWM(0x40, False)
-#pwm2 = PWM(0x41, False)
+pwm2 = PWM(0x41, False)
 servoFreq = 60
 pulseConstant = (1000000/servoFreq/4096)
 pwm.setPWMFreq(servoFreq)
-#pwm2.setPWMFreq(servoFreq)
+pwm2.setPWMFreq(servoFreq)
+
+print("Initializing AD")
+adc = ADS1x15(ic=0x00)
+gain = 6144  # +/- 6.144V
+LiPoReading = 0
+LiPoShutOffVoltage = 6000
+LiPoLowVoltage = 0          # lets hope for at fresh Lipo at start
+
 
 #servoMin = 650
 #servoMax = 2350
@@ -615,22 +649,17 @@ LegLiftHeight = 50
 GaitStep = 1
 
 #Tars Init Positions
-#for x in range (0,noServo):
-#    snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[x]
-#    servoWrite(snr,endpos)
-#for LegIndex in range(0, 6):
-#    LegPosX(LegIndex) = cInitPosX(LegIndex)	#Set start positions for each leg
-#    LegPosY(LegIndex) = cInitPosY(LegIndex)
-#    LegPosZ(LegIndex) = cInitPosZ(LegIndex)  
-
-
+for LegIndex in range(0, 6):
+    LegPosX[LegIndex] = cInitPosX[LegIndex]	#Set start positions for each leg
+    LegPosY[LegIndex] = cInitPosY[LegIndex]
+    LegPosZ[LegIndex] = cInitPosZ[LegIndex]  
 
 #Move the head to init position
 #HSERVO [cHeadRotate\0,cHeadTilt\100]
 
 #Initialize Controller
 ListInByteOK = []
-LastListInByte = []
+LastListInByte = [0,0,0,0,0,0,0]
 #InitController()
 
 #SSC
@@ -671,17 +700,17 @@ def GetSinCos(AngleDeg1):
     else:				#Positive values
         AngleDeg1 = ABSAngleDeg1-(3600*(ABSAngleDeg1/3600))
     if (AngleDeg1>=0 and AngleDeg1<=900):	# 0 to 90 deg
-        Sin4 = GetSin(AngleDeg1/5) 			# 5 is the presision (0.5) of the table
-        Cos4 = GetSin((900-(AngleDeg1))/5) 	
+        Sin4 = GetSin[int(round(AngleDeg1/5))] 			# 5 is the presision (0.5) of the table
+        Cos4 = GetSin[int(round((900-(AngleDeg1))/5))] 	
     elif (AngleDeg1>900 and AngleDeg1<=1800): 	# 90 to 180 deg
-        Sin4 = GetSin((900-(AngleDeg1-900))/5) # 5 is the presision (0.5) of the table	
-        Cos4 = -GetSin((AngleDeg1-900)/5)			
+        Sin4 = GetSin[int(round((900-(AngleDeg1-900))/5))] # 5 is the presision (0.5) of the table	
+        Cos4 = -GetSin[int(round((AngleDeg1-900)/5))]			
     elif (AngleDeg1>1800 and AngleDeg1<=2700): # 180 to 270 deg
-        Sin4 = -GetSin((AngleDeg1-1800)/5) 	# 5 is the presision (0.5) of the table
-        Cos4 = -GetSin((2700-AngleDeg1)/5)
+        Sin4 = -GetSin[int(round((AngleDeg1-1800)/5))] 	# 5 is the presision (0.5) of the table
+        Cos4 = -GetSin[int(round((2700-AngleDeg1)/5))]
     elif (AngleDeg1>2700 and AngleDeg1<=3600): # 270 to 360 deg
-        Sin4 = -GetSin((3600-AngleDeg1)/5) # 5 is the presision (0.5) of the table	
-        Cos4 = GetSin((AngleDeg1-2700)/5)	
+        Sin4 = -GetSin[int(round((3600-AngleDeg1)/5))] # 5 is the presision (0.5) of the table	
+        Cos4 = GetSin[int(round((AngleDeg1-2700)/5))]	
     if debug: print("GetSinCon output Sin4 ", Sin4)		
     if debug: print("GetSinCon output Cos4 ", Cos4)		
 
@@ -719,17 +748,17 @@ def GetArcCos(Cos4):
 
 
 #--------------------------------------------------------------------
-#[GETATAN2] Simplyfied ArcTan2 function based on fixed point ArcCos
+#[GetATan2] Simplyfied ArcTan2 function based on fixed point ArcCos
 #ATanX 		- Input X
 #ATanY 		- Input Y
 #ATan4  		- Output ARCTAN2(X/Y)
-#XYhyp2			- Output presenting Hypotenuse of X and Y
-def GetAtan2(AtanX, AtanY):
-    global XYhyp2
-    XYhyp2 = ((AtanX*AtanX*c4DEC) + (AtanY*AtanY*c4DEC))**2 #sqr
+#XYHyp2			- Output presenting Hypotenuse of X and Y
+def GetATan2(AtanX, AtanY):
+    global XYHyp2
+    XYHyp2 = ((AtanX*AtanX*c4DEC) + (AtanY*AtanY*c4DEC))**2 #sqr
     GetArcCos(AtanX*c6DEC / XYHyp2)
     Atan4 = AngleRad4 * (AtanY/abs(AtanY)) #Add sign 
-    if debug: print("GetAtan2 output Atan4 ", Atan4)
+    if debug: print("GetATan2 output Atan4 ", Atan4)
     return Atan4
 
 
@@ -740,34 +769,34 @@ def BalanceBody():
     global TotalTransY
     global TotalTransZ
     global TotalTransX
-    global TotalYbal1
-    global TotalZbal1 
-    global TotalXbal1
+    global TotalYBal1
+    global TotalZBal1 
+    global TotalXBal1
     if debug: print("Balancing body")
     TotalTransZ = TotalTransZ/6 
     TotalTransX = TotalTransX/6
     TotalTransY = TotalTransY/6
-    if TotalYbal1 > 0:		#Rotate balance circle by +/- 180 deg
-        TotalYbal1 = TotalYbal1 - 1800
+    if TotalYBal1 > 0:		#Rotate balance circle by +/- 180 deg
+        TotalYBal1 = TotalYBal1 - 1800
     else:
-        TotalYbal1 = TotalYbal1 + 1800	
-    if TotalZbal1 < -1800: 	#Compensate for extreme balance positions that causes owerflow
-        TotalZbal1 = TotalZbal1 + 3600
-    if TotalXbal1 < -1800:	#Compensate for extreme balance positions that causes owerflow
-        TotalXbal1 = TotalXbal1 + 3600
+        TotalYBal1 = TotalYBal1 + 1800	
+    if TotalZBal1 < -1800: 	#Compensate for extreme balance positions that causes owerflow
+        TotalZBal1 = TotalZBal1 + 3600
+    if TotalXBal1 < -1800:	#Compensate for extreme balance positions that causes owerflow
+        TotalXBal1 = TotalXBal1 + 3600
     #Balance rotation
-    TotalYBal1 = -TotalYbal1/6
-    TotalXBal1 = -TotalXbal1/6
-    TotalZBal1 = TotalZbal1/6
+    TotalYBal1 = -TotalYBal1/6
+    TotalXBal1 = -TotalXBal1/6
+    TotalZBal1 = TotalZBal1/6
 
 #[BalCalcOneLeg]
 def BalCalcOneLeg(PosX, PosZ, PosY, BalLegNr):
     global TotalTransY
     global TotalTransZ
     global TotalTransX
-    global TotalYbal1
-    global TotalZbal1 
-    global TotalXbal1
+    global TotalYBal1
+    global TotalZBal1 
+    global TotalXBal1
     if debug: print("Balancing leg ", BalLegNr)
     #Calculating totals from center of the body to the feet
     TotalZ = cOffsetZ[BalLegNr]+PosZ
@@ -777,11 +806,11 @@ def BalCalcOneLeg(PosX, PosZ, PosY, BalLegNr):
     TotalTransZ = TotalTransZ + TotalZ
     TotalTransX = TotalTransX + TotalX
     GetATan2(TotalX, TotalZ)
-    TotalYbal1 =  TotalYbal1 + (ATan4*1800) / 31415
+    TotalYBal1 =  TotalYBal1 + (ATan4*1800) / 31415
     GetATan2(TotalX, TotalY)
-    TotalZbal1 = TotalZbal1 + ((ATan4*1800) / 31415) -900 #Rotate balance circle 90 deg
+    TotalZBal1 = TotalZBal1 + ((ATan4*1800) / 31415) -900 #Rotate balance circle 90 deg
     GetATan2(TotalZ, TotalY)
-    TotalXbal1 = TotalXbal1 + ((ATan4*1800) / 31415) - 900 #Rotate balance circle 90 deg
+    TotalXBal1 = TotalXBal1 + ((ATan4*1800) / 31415) - 900 #Rotate balance circle 90 deg
 
 
 
@@ -810,8 +839,8 @@ def BodyIK(PosX, PosZ, PosY, RotationY, BodyIKLeg) :
     global BodyIKPosZ
     if debug: print("Doing BodyIK")
     #Calculating totals from center of the body to the feet 
-    TotalZ = cOffsetZ(BodyIKLeg)+PosZ 
-    TotalX = cOffsetX(BodyIKLeg)+PosX 
+    TotalZ = cOffsetZ[BodyIKLeg]+PosZ 
+    TotalX = cOffsetX[BodyIKLeg]+PosX 
     #PosY are equal to a "TotalY" 
   
     #Successive global rotation matrix: 
@@ -872,15 +901,15 @@ def LegIK(IKFeetPosX, IKFeetPosY, IKFeetPosZ, LegIKLegNr):
     GetATan2(IKFeetPosX, IKFeetPosZ)
     CoxaAngle1[LegIKLegNr] = ((ATan4*180) / 3141) + cCoxaAngle1[LegIKLegNr]
     #Length between the Coxa and tars (foot)
-    IKFeetPosXZ = XYhyp2/c2DEC
-    #Using GetAtan2 for solving IKA1 and IKSW
+    IKFeetPosXZ = XYHyp2/c2DEC
+    #Using GetATan2 for solving IKA1 and IKSW
     #IKA14 - Angle between SW line and the ground in radians
     IKA14 = GetATan2(IKFeetPosY, IKFeetPosXZ-cCoxaLength) 
     #IKSW2 - Length between femur axis and tars
-    IKSW2 = XYhyp2
+    IKSW2 = XYHyp2
     #if fDebugRotDisp:
     #	print(" == L IK ", sdec IKFeetPosY, " ",sdec IKFeetPosXZ-cCoxaLength, " ", 
-    #			sdec IKA14, " ", sdec XYhyp2)
+    #			sdec IKA14, " ", sdec XYHyp2)
     #IKA2 - Angle of the line S>W with respect to the femur in radians
     Temp1 = (((cFemurLength*cFemurLength) - (cTibiaLength*cTibiaLength))*c4DEC + (IKSW2*IKSW2))
     Temp2 = ((2*cFemurlength)*c2DEC * IKSW2)
@@ -929,7 +958,10 @@ def Gait(GaitCurrentLegNr) :
     global GaitStep
     if debug: print("Gait for leg no ",GaitCurrentLegNr)
     #Check IF the Gait is in motion
-    GaitInMotion = ((abs(TravelLengthX)>cTravelDeadZone) or (ABS(TravelLengthZ)>cTravelDeadZone) or (ABS(TravelRotationY)>cTravelDeadZone) )
+    GaitInMotion = ((abs(TravelLengthX)>cTravelDeadZone) or (abs(TravelLengthZ)>cTravelDeadZone) or (abs(TravelRotationY)>cTravelDeadZone) )
+    if debug: print("TravelLengthX",TravelLengthX)
+    if debug: print("TravelLengthZ",TravelLengthZ)
+    if debug: print("TravelRotationY",TravelRotationY)
     #Clear values under the cTravelDeadZone
     if (GaitInMotion==0) :
         if debug: print("Value is under the cTravelDeadZone")
@@ -988,9 +1020,13 @@ def CheckAngles():
     global CoxaAngle1
     global FemurAngle1
     global TibiaAngle1
-    if debug: print("Checking the mechanical limits of the servos")
+    if debug: 
+        print("Checking the mechanical limits of the servos, status before:")
+        print(CoxaAngle1)
+        print(FemurAngle1)
+        print(TibiaAngle1)
     for LegIndex in range(0,6):
-        if CoxaAngle1[LegIndex]  < cCoxaMin1[LegIndex]  : CoxaAngle1[LegIndex]  = cCoxaMin1[LegIndex]
+        if CoxaAngle1[LegIndex]  < cCoxaMin1[LegIndex]  : CoxaAngle1[LegIndex]  = cCoxaMin1[LegIndex]   # after the default angle is added/substracted
         if CoxaAngle1[LegIndex]  > cCoxaMax1[LegIndex]  : CoxaAngle1[LegIndex]  = cCoxaMax1[LegIndex]
         if FemurAngle1[LegIndex] < cFemurMin1[LegIndex] : FemurAngle1[LegIndex] = cFemurMin1[LegIndex]
         if FemurAngle1[LegIndex] > cFemurMax1[LegIndex] : FemurAngle1[LegIndex] = cFemurMax1[LegIndex]
@@ -1000,6 +1036,10 @@ def CheckAngles():
         #HeadTilt = HeadTilt MIN cHeadTiltFast1 MAX cHeadTiltSlow1
         #print("BodyAngle:   ", BodyAngle)
         #print("   HeadTilt: ", HeadTilt)
+    print("Checking the mechanical limits of the servos, status after:")
+    print(CoxaAngle1)
+    print(FemurAngle1)
+    print(TibiaAngle1)
 
 
 def ServoDriverStart():
@@ -1018,6 +1058,10 @@ def ServoDriverStart():
         aswCoxaServo[LegIndex] = (CoxaAngle1[LegIndex] * StepsPerDegree ) / 10 + aServoOffsets[cCoxaPin[LegIndex]]
         aswFemurServo[LegIndex] = (FemurAngle1[LegIndex] * StepsPerDegree ) / 10	+ aServoOffsets[cFemurPin[LegIndex]]
         aswTibiaServo[LegIndex] = (TibiaAngle1[LegIndex] * StepsPerDegree ) / 10 + aServoOffsets[cTibiaPin[LegIndex]]
+    if debug: 
+        print(aswCoxaServo)
+        print(aswFemurServo)
+        print(aswTibiaServo)
 
 #--------------------------------------------------------------------
 #[Servo Driver Commit] Do the actual HSERVO in the commit phase
@@ -1252,13 +1296,55 @@ def FreeServos():
 
 	
 #==============================================================================
+def GetAD(cannel):
+    if debug: print(y)
+    for x in range(0,samples):
+      List1 = []
+      OneTime = adc.readADCSingleEnded(cannel, gain, 128)
+      List1.append(OneTime)
+    #Samples ready, go for the Mid
+    total=0
+    for z in range(0,len(List1)):
+        total += List1[z]
+    if debug: print(total)
+    #MidListInt.append(total/len(List1))
+    return int(round(total/len(List1)))
+
+
+def GetLiPoVoltage() :
+    global samples
+    global LiPoLowVoltage
+    global LiPoReading
+    samples = 1
+    reading = GetAD(0)
+    LiPoReading = int(round(reading,0))*2
+    if debug : print("LiPoReading: ",LiPoReading)
+    if ((LiPoReading < LiPoShutOffVoltage) and (hexon == 1)) :
+        LiPoLowVoltage = 1
+        buzz([[800,200],[700,200],[600,200],[500,200],[400,200],[300,200],[200,2000]]) # Major Warning beeper!
+        parklegs()
+        HexOn = 0
+    if LiPoLowVoltage == 1 :
+        buzz([[300,100],[200,100]])  # pitch and duration
+        print("Low LiPoReading!! : ",LiPoReading)  
+        HexOn = 0
+    return
+
+
 def ParkLegs():
     global SSCTime
+    global FemurAngle1
+    global TibiaAngle1
+    global CoxaAngle1
     print("parking legs")
     for LegIndex in range(0,6):
         FemurAngle1[LegIndex] = -1800
         TibiaAngle1[LegIndex] = -1800
         CoxaAngle1[LegIndex] = 0
+    if debug : 
+        print(FemurAngle1)
+        print(TibiaAngle1)
+        print(CoxaAngle1)
     SSCTime = 600                   # Nice and slow
     CheckAngles()
     ServoDriverStart()
@@ -1271,14 +1357,24 @@ def ParkLegs():
         cLRCoxaPin, cLRFemurPin, cLRTibiaPin])
 
 
-
 def servoWrite(channel , pulsein):
-    if channel in range(0,15):
-        pwm.setPWM(channel,0, int(pulsein/pulseConstant))               
-    #else:
-    #    pwm2.setPWM(channel-16,0, int(pulsein/pulseConstant))               
+    #servosaver !!!
+    if debug : print("channel: %d pulsin %d" % (channel, pulsein))
+    snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[channel]
+    if ((pulsein < minpuls) or (pulsein > maxpuls)) : 
+        print("ERROR channel: %d pulsin %d" % (channel, pulsein))
+        raise SystemError
+    else:
+        if channel in range(0,15):
+            #pwm.setPWM(channel,0, int(pulsein/pulseConstant))   
+            time.sleep(0.001)            
+        else:
+            #pwm2.setPWM(channel-16,0, int(pulsein/pulseConstant)) 
+            time.sleep(0.001)                           
 
-def hservosync(PinPosSpeedTulip,delay): #([[1,1500,10],[2,1600,20]],150)    #delay in ms
+
+def hservosync(PinPosSpeedTulip,delay): #([[1,10500],[2,-3000]],150)    #delay in ms
+    ##-12000 to 12000 expected input 
     global servoDynTh
     global serviDynMa
     global BlockServoUpdates
@@ -1289,27 +1385,28 @@ def hservosync(PinPosSpeedTulip,delay): #([[1,1500,10],[2,1600,20]],150)    #del
     for PinPosSpeed in PinPosSpeedTulip:  #first round, to get max traveltime
         #unpack
         snrin,endposin = PinPosSpeed
+        #if debug: print("snrin: ",snrin)
         snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[snrin]
         snr,posnow = servoDynTh[snrin]
         if minpuls == 0 : raise SystemError         #error in the configuration
-        #if debug: print("snr: ",snr)
-        #if debug: print("endposin1: ",endposin)
-        endposin = ((endposin/12)+1500) # changes from HSERVO-limits to servopulslimits
-        #if debug: print("endposin2: ",endposin)
-        if endposin < minpuls :
-                endposin = minpuls
-        if endposin > maxpuls :
-                endposin = maxpuls
-        if posnow <> endposin: 
+        if debug: 
+            print("snr: ",snr)
+            print("endposin1: ",endposin)
+        if endposin > 12000 : endposin = 12000
+        if endposin < -12000 : endposin = -12000
+        endposin = int(round(interp(endposin,[-12000,12000],[minpuls,maxpuls])))
+        if debug: print("endposin2: ",endposin)
+        if posnow != endposin: 
             if debug: print("posnow: ",posnow)
             if debug: print("endposin: ",endposin)
             traveltime = (fss*1.0)/(maxpuls-minpuls)*abs(posnow - endposin)
             if debug: print("traveltime: ",traveltime)
             if traveltime > traveltimemax : traveltimemax = traveltime
-        #commit
-        #serviDynMa[snrin] = snr,fss,minpuls,maxpuls,speedin,endposin
-        #if debug: print(serviDynMa[snrin])
-    if traveltimemax > 0: 
+        if debug: print("PinPosSpeed1: ",PinPosSpeed)
+        PinPosSpeed = snrin,endposin    #pack pulse so we dont need to do the calc again       
+        if debug: print("PinPosSpeed2: ",PinPosSpeed)
+
+    if traveltimemax > 0:       # at least one of the servoes has a distance to travel, go for second round
         if debug: 
             print("traveltimemax: ",traveltimemax)
             print("delay: ",delay)
@@ -1317,19 +1414,34 @@ def hservosync(PinPosSpeedTulip,delay): #([[1,1500,10],[2,1600,20]],150)    #del
         if debug: print("traveltimemax (delay included): ",traveltimemax)
         BlockServoUpdates = 1                   # set flag for exclusive servo update
         while ServosBeingUpdated == 1:          # wait for the returnflag to be set
+            if debug: print("waiting for ServosBeingUpdated == 1") 
             time.sleep(0.0001)      
+        
         for PinPosSpeed in PinPosSpeedTulip:    #second round, to use traveltimemax to set speed
             #unpack
+            snrin,endposin = PinPosSpeed
+
             snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[snrin]
             snr,posnow = servoDynTh[snrin]
-            speedin = int(round((maxpuls-minpuls)/(traveltimemax*driverHz)))     # Integer please
+
+            if endposin > 12000 : endposin = 12000
+            if endposin < -12000 : endposin = -12000
+            endposin = int(round(interp(endposin,[-12000,12000],[minpuls,maxpuls])))
+            if debug: print("endposin2: ",endposin)
+
+            speedin = int(round((abs(endposin-posnow))/(traveltimemax*driverHz)))     # Integer please
             #pack
+            
             serviDynMa[snr] = snr,fss,minpuls,maxpuls,speedin,endposin
+            
+            if debug: print(serviDynMa[snr])
         BlockServoUpdates = 0                   # unset flag for exclusive servo update
+    elif debug: print("traveltimeMax = 0")
 
 
 
-def hservo(PinPosSpeedTulip): #([[1,1500,10],[2,1600,20]]) 
+
+def hservo(PinPosSpeedTulip): #([[1,-10000,10],[2,12000,20]]) 
     ##-12000 to 12000 expected input => ((input/12)+1500)
     ## if input = -30000 then input = 0 (free servo)
     global servoDynTh
@@ -1340,25 +1452,24 @@ def hservo(PinPosSpeedTulip): #([[1,1500,10],[2,1600,20]])
         else :
             snrin,endposin = PinPosSpeed
             speedin = 9999                  # if only two parameters => full speed ahead !
+        if speedin == 0 : speedin = 1       # dont accept zero speed, it will cause a deathloop
         snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[snrin]
+        if minpuls == 0 : raise SystemError         #error in the configuration
         snr,posnow = servoDynTh[snrin]
-        #print(speedin)
+        #if debug: print(speedin)
         if speedin > ((maxpuls-minpuls)/(fss*driverHz)) : 
             speedin = ((maxpuls-minpuls)/(fss*driverHz))
-        #print(speedin)
+        speedin = int(round(speedin))
+        if debug: print(speedin)
         if endposin == -30000:
             endposin = 0
         else:
-            endposin = ((endposin/12)+1500) # maps to HSERVO limits
-            #print(endposin)
-            if endposin < minpuls :
-                endposin = minpuls
-            if endposin > maxpuls :
-                endposin = maxpuls
-        #print(endposin)
-        #commit
-        #print(serviDynMa[snrin])
-        speedin = round(speedin)
+            if endposin > 12000 : endposin = 12000
+            if endposin < -12000 : endposin = -12000
+            if debug: print(endposin)
+            endposin = int(round(interp(endposin,[-12000,12000],[minpuls,maxpuls])))
+            if debug: print(endposin)
+        if debug: print(endposin)
         serviDynMa[snrin] = snr,fss,minpuls,maxpuls,speedin,endposin
         #print(serviDynMa[snrin])
 
@@ -1398,33 +1509,34 @@ def hservoidle(pin): #(1) return 1 if idle, else 0
     return returnint
 
 
-def buzz(pitch,duration):
-        buzzer = BuzzDriver(pitch, duration)
+def buzz(pitchandduration):
+        buzzer = BuzzDriver(pitchandduration)
         buzzer.start()
 
-
 class BuzzDriver(threading.Thread):
-    def __init__(self, pitch, duration):
+    def __init__(self, pitchanddurationTulip):
         threading.Thread.__init__(self)
-        self.pitch = pitch
-        self.duration = duration    # in ms
+        self.pitchanddurationTulip = pitchanddurationTulip   # Pairs of Pitch in Hz and durition in ms
+        #self.duration = duration    # in ms
         self.running = False
-
+    
     def run(self):
         self.running = True
-        period = 1.0 / pitch
-        delay = period / 2.0
-        cycles = int((duration/1000.0) * pitch)
-        for i in range(cycles):
+        for Pair in self.pitchanddurationTulip:
+            pitch,duration = Pair
+            period = 1.0 / pitch
+            delay = period / 2.0
+            cycles = int((duration/1000.0) * pitch)
+            for i in range(cycles):
                 if self.running == False : break
                 GPIO.output(buzzer_pin, True)
                 time.sleep(delay)
                 GPIO.output(buzzer_pin, False)
                 time.sleep(delay)
-        self.running = False
 
     def stop(self):
         self.running = False
+
 
 
 class servoDriver(threading.Thread):
@@ -1446,19 +1558,24 @@ class servoDriver(threading.Thread):
             a = datetime.datetime.now()
             #Dostuff
             for x in range (0,noServo):
+                if self.running == False :break
                 snr,posnow = servoDynTh[x]
+                #if debug : print("servodriver snr %d" % snr)
                 snr,fss,minpuls,maxpuls,speed,endpos = serviDynMa[x]
+                #if debug : 
+                #    if (posnow == endpos):
+                #        print("servodriver snr %d posnow == endpos %d" % (snr,posnow))
                 if (posnow < endpos):   #going bigger
                     if ((posnow + speed) > endpos):
                         posnow = endpos
                     else: posnow += speed
-                    if debug: print("servodriver posnow: ",posnow)
+                    if debug: print("servodriver (bigger) posnow: ",posnow)
                     servoWrite(x,posnow)        #tar ca 0,003s
                 elif (posnow > endpos): #going smaller
                     if ((posnow - speed) < endpos):
                         posnow = endpos
                     else: posnow -= speed
-                    if debug: print("servodriver posnow: ",posnow)
+                    if debug: print("servodriver (smaller) posnow: ",posnow)
                     servoWrite(x,posnow)        #tar ca 0,003s
                 servoDynTh[x] = snr,posnow
             #Done
@@ -1475,7 +1592,9 @@ class servoDriver(threading.Thread):
         self.running = False
 
 def InitController():
-    LastListInByte = []
+    global LastListInByte
+    #ListInByteOK = []
+    LastListInByte = [0,0,0,0,0,0,0]
 
 
 class ReadController(threading.Thread):
@@ -1489,7 +1608,7 @@ class ReadController(threading.Thread):
         while (self.running):
             a = datetime.datetime.now()
             #Dostuff
-            if debug : print("waiting for radiotrafic")
+            #if debug : print("waiting for radiotrafic")
             rcv = port.read(1)
             if rcv == chr(170):       # strip of first checkbyte
                 rcv = port.read(1)
@@ -1500,17 +1619,56 @@ class ReadController(threading.Thread):
                     check = int(ListInByte[6]) ^ int(ListInByte[5])  #check the checksum
                     for x in range(4,-1,-1): 
                         check = int(ListInByte[x]) ^ (check) 
-                    if debug: print(check) 
+                    #if debug: print(check) 
                     if check == 170:
-                        if debug: print("good checksum")        # don't do ANYTHING without a good checksum !!!
+                        #if debug: print("good checksum")        # don't do ANYTHING without a good checksum !!!
                         # Do the stuff
                         ListInByteOK = ListInByte #transfer local good data to globalbuffer
             #Done
             b = datetime.datetime.now()
             delta = b - a
             deltatime = delta.total_seconds()
-            if debug: print("ReadController cycletime", deltatime)
+            #if debug: print("ReadController cycletime", deltatime)
         self.running = False
+
+    def stop(self):
+        self.running = False
+
+
+class DisplayDriver(threading.Thread):
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = Queue()
+        self.running = False 
+    
+    def run(self):   
+        self.running = True
+        if debug : print("init display")
+        # Load default font.
+        font = ImageFont.load_default()
+        font2 = ImageFont.truetype("ARIALN.TTF", 20)
+        
+        # choose active display
+        device = ssd1306(port=1, address=0x3C)			
+        #device = sh1106(port=1, address=0x3C)
+
+        # Create image buffer.
+        width = device.width
+        height = device.height
+ 
+        #----------------------------------------------------------------------------------------------------------
+        rowhight=12
+        while (self.running):
+            a = datetime.datetime.now()
+            if debug: print("Que start")
+            GetLiPoVoltage()
+            with canvas(device) as draw:
+                if self.running == False : break
+                a = LiPoReading/1000.0
+                draw.text((70,40), ("%.3f V" % a), font=font2, fill=255)
+            time.sleep(1)
+        self.running = False
+
 
     def stop(self):
         self.running = False
@@ -1543,7 +1701,7 @@ class ReadController(threading.Thread):
 #       endpos = (int(ListOKByte[0]) * ((maxpuls-minpuls)/256)) + minpuls
 #       speed = ((maxpuls-minpuls)/(fss*driverHz))/255 * int(ListOKByte[3])
 
-def main(): 
+if __name__ == "__main__": 
     print("Starting servodriver")
     servoD = servoDriver(1.0/driverHz)
     print("Starting reciever")
@@ -1552,11 +1710,14 @@ def main():
         print("Starting threads")
         servoD.start()
         xbeeIn.start()
+        
         #time.sleep(0.5) #to start up xbee
         # Get the servo offsets
         ReadServoOffsets() #read finetuneoffset from file
         GaitSelect() # choose a gate ##
-        ParkLegs() #nc
+        if debug: print("Setting legs in startpostion")
+        ParkLegs() # including hservowait
+        #time.sleep(100000)
         while True: #main loop
             #Start time
             lTimerStart = datetime.datetime.now() 
@@ -1566,7 +1727,8 @@ def main():
                 time.sleep(1)
             #ListInByteOld = ListInByte  #save old value
             ListInByte = ListInByteOK   #new data is in ListInByteOK
-            if ((ListInByte[4] | (1 << 7)) > 0) and ((LastListInByte[4] | (1 << 7)) > 0)  : # button start is pressed
+            
+            if ((ListInByte[4] & (1 << 7)) > 0) and ((LastListInByte[4] & (1 << 7)) == 0)  : # button start is pressed
                 if debug: print("Startbutton pressed")
                 if HexOn==1: 
                     if debug: print("Bot is on, therefor going off")
@@ -1589,10 +1751,10 @@ def main():
 
             if HexOn == 1: #the rest is ONLY done if bot is on !
                 #Translate mode
-                if (ListInByte[4] | (1 << 4)) > 0 : # button L1 is pressed
+                if ((ListInByte[4] & (1 << 4)) > 0) and ((LastListInByte[4] & (1 << 4)) == 0)    : # button L1 is pressed
                     if debug: print("Button L1 is presed: Translatemode")
-                    buzz(50,4000)
-                    if ControlMode <> TranslateMode:
+                    buzz([[500,300],[700,100]])  # pitch and duration
+                    if ControlMode != TranslateMode:
                         ControlMode = TranslateMode
                     else:
                         if (SelectedLeg==255):
@@ -1600,10 +1762,10 @@ def main():
                         else:
                             ControlMode = SingleLegMode
                 #Rotate mode
-                if (ListInByte[4] | (1 << 5)) > 0 : # button L2 is pressed
+                if ((ListInByte[4] & (1 << 5)) > 0) and ((LastListInByte[4] & (1 << 5)) == 0) : # button L2 is pressed
                     if debug: print("Button L2 is presed: Rotate mode")
-                    buzz(50,4000)
-                    if ControlMode <> RotateMode:
+                    buzz([[500,300],[700,100]])  # pitch and duration
+                    if ControlMode != RotateMode:
                         ControlMode = RotateMode
                     else:
                         if (SelectedLeg==255):
@@ -1611,11 +1773,11 @@ def main():
                         else:
                             ControlMode = SingleLegMode
                 #Single leg mode
-                if (ListInByte[5] | (1 << 1)) > 0 : # button Circle is pressed
-                    if debug: print("Button Circle is presed: Single leg mode")
-                    if ABS(TravelLengthX)<cTravelDeadZone and ABS(TravelLengthZ)<cTravelDeadZone and ABS(TravelRotationY*2)<cTravelDeadZone:
-                        buzz(50,4000)
-                        if (ControlMode <> SingleLegMode):
+                if ((ListInByte[5] & (1 << 1)) > 0) and ((LastListInByte[5] & (1 << 1)) == 0) : # button Circle is pressed
+                    if debug: print("Button Circle is pressed: Single leg mode")
+                    if abs(TravelLengthX)<cTravelDeadZone and abs(TravelLengthZ)<cTravelDeadZone and abs(TravelRotationY*2)<cTravelDeadZone:
+                        buzz([[500,300],[700,100]])  # pitch and duration
+                        if (ControlMode != SingleLegMode):
                             ControlMode = SingleLegMode
                             if (SelectedLeg == 255): #Select leg if none is selected
                                 SelectedLeg=cRF #Startleg
@@ -1623,67 +1785,65 @@ def main():
                             ControlMode = WalkMode
                             SelectedLeg=255	      
                 #Not allocates button
-                if (ListInByte[5] | (1 << 2)) > 0 : # button X is pressed
+                if ((ListInByte[5] & (1 << 2)) > 0) and ((LastListInByte[5] & (1 << 2)) == 0) : # button X is pressed
                     if debug: print("Button X is presed: Not Allocated :)")
                     time.sleep(0)
                 #[Common functions]
                 #Switch Balance mode on/off
-                if (ListInByte[5] | (1 << 3)) > 0 : # button Square is pressed
+                if ((ListInByte[5] & (1 << 3)) > 0) and ((LastListInByte[5] & (1 << 3)) == 0) : # button Square is pressed
                     if debug: print("Button Square is presed: Switch Balance mode on/off")
                     if BalanceMode == 1:
                         BalanceMode = 0
                     else: BalanceMode = 1
                     if BalanceMode :
-                        buzz(250,3000)	  
+                        buzz([[500,300],[700,100]])  # pitch and duration	  
                     else:	  
-                        buzz(100,4000)
-                        buzz(50,8000)
+                        buzz([[700,300],[300,100]])  # pitch and duration
                 #Stand up, sit down
-                if (ListInByte[5] | (1 << 0)) > 0 : # button Triangle is pressed
+                if ((ListInByte[5] & (1 << 0)) > 0) and ((LastListInByte[5] & (1 << 0)) == 0) : # button Triangle is pressed
                     if (BodyYOffset>0):
                         BodyYOffset = 0
                     else:
                         BodyYOffset = 50
                 #D-Up Button test
-                if (ListInByte[5] | (1 << 4)) > 0 : # D-up up is pressed
+                if ((ListInByte[5] & (1 << 4)) > 0) and ((LastListInByte[5] & (1 << 4)) == 0): # D-up up is pressed
                     if debug: print("Button D-pad up: Raise body")
                     BodyYOffset = BodyYOffset+10
-                if (ListInByte[5] | (1 << 6)) > 0 : # D-Dow up is pressed
+                if ((ListInByte[5] & (1 << 6)) > 0) and ((LastListInByte[5] & (1 << 6)) == 0) : # D-Dow up is pressed
                     if debug: print("Button D-pad down: lower body")
                     BodyYOffset = BodyYOffset-10	
-                if (ListInByte[5] | (1 << 5)) > 0 : # D-Rig is pressed
+                if ((ListInByte[5] & (1 << 5)) > 0) and ((LastListInByte[5] & (1 << 5)) == 0) : # D-Rig is pressed
                     if debug: print("Button D-pad right:")
                     if SpeedControl > 0:                                # lower value for SpeedControl  => faster
                         if debug: print("Going faster")
                         SpeedControl = SpeedControl - 50
                         if SpeedControl < 0 : SpeedControl = 0
-                    buzz(50,4000)
-                if (ListInByte[5] | (1 << 7)) > 0 : # D-Lef is pressed
+                    buzz([[500,300],[700,100]])  # pitch and duration
+                if ((ListInByte[5] & (1 << 7)) > 0) and ((LastListInByte[5] & (1 << 7)) == 0) : # D-Lef is pressed
                     if debug: print("Button D-pad left:")
                     if SpeedControl<2000 :
                         if debug: print("Going slower")
                         SpeedControl = SpeedControl + 50
                         if SpeedControl > 2000 : SpeedControl = 2000
-                    buzz(50,4000)	  
+                    buzz([[500,300],[700,100]])  # pitch and duration	  
 
                 #[Walk functions]
-                if (ControlMode==WALKMODE):
+                if (ControlMode==WalkMode):
                     #Switch gates
-                    if ((ListInByte[4] | (1 << 6)) > 0) and ABS(TravelLengthX)<cTravelDeadZone and ABS(TravelLengthZ)<cTravelDeadZone and ABS(TravelRotationY*2)<cTravelDeadZone:
+                    if ((ListInByte[4] & (1 << 6)) > 0) and ((LastListInByte[4] & (1 << 6)) == 0) and  abs(TravelLengthX)<cTravelDeadZone and abs(TravelLengthZ)<cTravelDeadZone and abs(TravelRotationY*2)<cTravelDeadZone:
                         # Select Button is pressed and no movemwnt
                         if debug: print("Select Button is pressed and no movemwnt")
                         if GaitType<7:
-                            buzz(50,4000)
+                            buzz([[500,300],[700,100]])  # pitch and duration
                             GaitType = GaitType+1
                         else:
-                            buzz(50,4000)
-                            buzz(50,4500)
+                            buzz([[700,300],[500,100]])  # pitch and duration
                             GaitType = 0
                         if debug: print("Gait selected: ",GaitType)
                         GaitSelect()					
                     #Double leg lift height		
-                    if ((ListInByte[4] | (1 << 2)) > 0):    # R1 is pressed
-                        buzz(50,4000)
+                    if ((ListInByte[4] & (1 << 2)) > 0) and ((LastListInByte[4] & (1 << 2)) == 0):    # R1 is pressed
+                        buzz([[500,300],[700,100]])  # pitch and duration
                         if DoubleHeightOn == 1 :
                             DoubleHeightOn = 0
                         else:
@@ -1693,15 +1853,15 @@ def main():
                         else:
                             LegLiftHeight = 50
                     #Double Travel Length
-                    if ((ListInByte[4] | (1 << 3)) > 0):    # R2 is pressed
-                        buzz(50,4000)
+                    if ((ListInByte[4] & (1 << 3)) > 0) and ((LastListInByte[4] & (1 << 3)) == 0):    # R2 is pressed
+                        buzz([[500,300],[700,100]])  # pitch and duration
                         if DoubleTravelOn == 1:
                             DoubleTravelOn = 0
                         else:
                             DoubleTravelOn = 1
                     # Switch between Walk method 1 and Walk method 2
-                    if ((ListInByte[4] | (1 << 1)) > 0):    # R3 is pressed
-                        buzz(50,4000)
+                    if ((ListInByte[4] & (1 << 1)) > 0) and ((LastListInByte[4] & (1 << 1)) == 0):    # R3 is pressed
+                        buzz([[500,300],[700,100]])  # pitch and duration
                         if WalkMethod == 1:
                             WalkMethod = 0
                         else:
@@ -1733,7 +1893,7 @@ def main():
                 if (ControlMode==SINGLELEGMODE):
                     #Switch leg for single leg control
                     if ((ListInByte[4] | (1 << 6)) > 0):	#Select Button test 
-                        buzz(50,4000)
+                        buzz([[500,300],[700,100]])  # pitch and duration
                         if SelectedLeg < 5:
                             SelectedLeg = SelectedLeg+1
                         else:
@@ -1743,24 +1903,36 @@ def main():
                     SLLegZ 	= (ListInByte[0] - 128)/2 #Left Stick Up/Down
                     # Hold single leg in place
                     if ((ListInByte[4] | (1 << 3)) > 0):    # R2 is pressed
-                        buzz(50,4000)
+                        buzz([[500,300],[700,100]])  # pitch and duration
                         if SLHold == 1:
                             SLHold = 0
                         else:
                             SLHold = 1
                 #Calculate walking time delay
-                InputTimeDelay = 128 - (ABS(ListInByte[1] - 128)) 
-                if InputTimeDelay < ABS((ListInByte[0] - 128)) : InputTimeDelay = ABS((ListInByte[0] - 128))
-                if InputTimeDelay < ABS((ListInByte[3] - 128)) : InputTimeDelay = ABS((ListInByte[3] - 128))
+                InputTimeDelay = 128 - (abs(ListInByte[1] - 128)) 
+                if InputTimeDelay < abs((ListInByte[0] - 128)) : InputTimeDelay = abs((ListInByte[0] - 128))
+                if InputTimeDelay < abs((ListInByte[3] - 128)) : InputTimeDelay = abs((ListInByte[3] - 128))
             #Calculate BodyPosY
             BodyPosY = (BodyYOffset + BodyYShift) 
             if BodyPosY < 0 : BodyPosY = 0   
             #Store previous state
             LastListInByte = ListInByte
+            #print(LegPosY[cRF])
+            #print(cInitPosY[cRF])
+            #print(LegPosY[cRM])
+            #print(cInitPosY[cRM])
+            #print(LegPosY[cRR])
+            #print(cInitPosY[cRR])
+            #print(LegPosY[cLR])
+            #print(cInitPosY[cLR])
+            #print(LegPosY[cLM])
+            #print(cInitPosY[cLM])
+            #print(LegPosY[cLF])
+            #print(cInitPosY[cLF])
             #SingleLegControl:
             AllDown = LegPosY[cRF]==cInitPosY[cRF] and LegPosY[cRM]==cInitPosY[cRM] and LegPosY[cRR]==cInitPosY[cRR] and LegPosY[cLR]==cInitPosY[cLR] and LegPosY[cLM]==cInitPosY[cLM] and LegPosY[cLF]==cInitPosY[cLF]
             if (SelectedLeg>=0 and SelectedLeg<=5):
-                if (SelectedLeg<>Prev_SelectedLeg):
+                if (SelectedLeg!=Prev_SelectedLeg):
                     if (AllDown) :  #Lift leg a bit when it got selected
                         LegPosY[SelectedLeg] = cInitPosY[SelectedLeg]-20  
                         #Store current status
@@ -1780,7 +1952,7 @@ def main():
                         LegPosX[LegIndex] = cInitPosX[LegIndex]
                         LegPosY[LegIndex] = cInitPosY[LegIndex]
                         LegPosZ[LegIndex] = cInitPosZ[LegIndex]
-                if Prev_SelectedLeg<>255:
+                if Prev_SelectedLeg!=255:
                     Prev_SelectedLeg = 255
 
 
@@ -1817,28 +1989,28 @@ def main():
             IKSolutionWarning = 0 
             IKSolutionError = 0 
             fDebugRotDisp = 0
-            if (wDebugLevel and DBG_LVL_NORMAL):
-                if BodyRotZ1 and (BodyRotZ1 <> xxxLastBodyRotZ1):
-                    fDebugRotDisp = 1
+            #if (wDebugLevel and DBG_LVL_NORMAL):
+            #    if BodyRotZ1 and (BodyRotZ1 != xxxLastBodyRotZ1):
+            #        fDebugRotDisp = 1
             xxxLastBodyRotZ1 = BodyRotZ1
             #Do IK for all Right legs
             for LegIndex in range(0,3):	
-                BodyIK([-LegPosX(LegIndex)+BodyPosX+GaitPosX(LegIndex) - TotalTransX, 
-	  				LegPosZ(LegIndex)+BodyPosZ+GaitPosZ(LegIndex) - TotalTransZ, 
-	  				LegPosY(LegIndex)+BodyPosY+GaitPosY(LegIndex) - TotalTransY, 
-	  				GaitRotY(LegIndex), LegIndex])
-                LegIK( [LegPosX(LegIndex)-BodyPosX+BodyIKPosX-(GaitPosX(LegIndex) - TotalTransX), 
-	  				LegPosY(LegIndex)+BodyPosY-BodyIKPosY+GaitPosY(LegIndex) - TotalTransY, 
-	  				LegPosZ(LegIndex)+BodyPosZ-BodyIKPosZ+GaitPosZ(LegIndex) - TotalTransZ, LegIndex])   
+                BodyIK(-LegPosX[LegIndex]+BodyPosX+GaitPosX[LegIndex] - TotalTransX, 
+	  				LegPosZ[LegIndex]+BodyPosZ+GaitPosZ[LegIndex] - TotalTransZ, 
+	  				LegPosY[LegIndex]+BodyPosY+GaitPosY[LegIndex] - TotalTransY, 
+	  				GaitRotY[LegIndex], LegIndex)
+                LegIK(LegPosX[LegIndex]-BodyPosX+BodyIKPosX-(GaitPosX[LegIndex] - TotalTransX), 
+	  				LegPosY[LegIndex]+BodyPosY-BodyIKPosY+GaitPosY[LegIndex] - TotalTransY, 
+	  				LegPosZ[LegIndex]+BodyPosZ-BodyIKPosZ+GaitPosZ[LegIndex] - TotalTransZ, LegIndex)   
             #Do IK for all Left legs  
             for LegIndex in range(3,6):	
-                BodyIK([LegPosX(LegIndex)-BodyPosX+GaitPosX(LegIndex) - TotalTransX, 
-	  				LegPosZ(LegIndex)+BodyPosZ+GaitPosZ(LegIndex) - TotalTransZ, 
-	  				LegPosY(LegIndex)+BodyPosY+GaitPosY(LegIndex) - TotalTransY, 
-	  				GaitRotY(LegIndex), LegIndex])
-                LegIK( [LegPosX(LegIndex)+BodyPosX-BodyIKPosX+GaitPosX(LegIndex) - TotalTransX, 
-	  				LegPosY(LegIndex)+BodyPosY-BodyIKPosY+GaitPosY(LegIndex) - TotalTransY, 
-	  				LegPosZ(LegIndex)+BodyPosZ-BodyIKPosZ+GaitPosZ(LegIndex) - TotalTransZ, LegIndex])
+                BodyIK(LegPosX[LegIndex]-BodyPosX+GaitPosX[LegIndex] - TotalTransX, 
+	  				LegPosZ[LegIndex]+BodyPosZ+GaitPosZ[LegIndex] - TotalTransZ, 
+	  				LegPosY[LegIndex]+BodyPosY+GaitPosY[LegIndex] - TotalTransY, 
+	  				GaitRotY[LegIndex], LegIndex)
+                LegIK(LegPosX[LegIndex]+BodyPosX-BodyIKPosX+GaitPosX[LegIndex] - TotalTransX, 
+	  				LegPosY[LegIndex]+BodyPosY-BodyIKPosY+GaitPosY[LegIndex] - TotalTransY, 
+	  				LegPosZ[LegIndex]+BodyPosZ-BodyIKPosZ+GaitPosZ[LegIndex] - TotalTransZ, LegIndex)
             #Return to the middle position 
             BodyAngle=0
             #IF ((abs(TravelLengthX)>TravelDeadZone | abs(TravelLengthZ)>TravelDeadZone)  & TravelLengthZ<TravelDeadZone) | abs(TravelRotationY*10)>TravelDeadZone THEN 
@@ -1889,7 +2061,7 @@ def main():
 
                     #Sync BAP with SSC while walking to ensure the prev is completed before sending the next one
                     GaitPeak = 0 #Reset
-                    # Finding any incident of GaitPos/Rot <> 0:
+                    # Finding any incident of GaitPos/Rot != 0:
                     for LegIndex in range(0, 6):
                         if GaitPeak < abs(GaitPosX(LegIndex)):
                             GaitPeak = abs(GaitPosX(LegIndex))
@@ -1967,5 +2139,5 @@ def main():
     print("Done")
     # END def main():
 
-if __name__ == "__main__": 
-    main()
+#if __name__ == "__main__": 
+#    main()
